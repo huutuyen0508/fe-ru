@@ -93,5 +93,4 @@ export const nav = [
   { href: '/admin/map', label: 'Parking map', icon: 'Map' },
   { href: '/admin/vehicles', label: 'Vehicles', icon: 'CarFront' },
   { href: '/admin/residents', label: 'Residents', icon: 'Users' },
-  { href: '/admin/settings', label: 'Settings', icon: 'Settings' },
 ]
