@@ -207,9 +207,18 @@
   .floorplan-card-chat .floorplan-main { @apply px-3 py-2; }
   .floorplan-card-chat .floorplan-row { @apply min-h-[58px]; }
   .floorplan-card-chat .floorplan-slot { @apply text-[8px]; }
-  @media (max-width: 900px) {
-    .floorplan-scroll { @apply overflow-x-auto; }
-    .floorplan-shell { @apply min-w-[1120px]; }
+  @media (max-width: 767px) {
+    /* Mobile: let the floor plan shrink to the available width instead of forcing a wide, scrollable canvas. */
+    .floorplan-shell { min-width: 0; }
+    .floorplan-card-chat .floorplan-shell { min-width: 0; min-height: 320px; }
+    .floorplan-header { @apply flex-col items-start gap-3; }
+    .floorplan-row { @apply min-h-[56px] gap-0.5; }
+    .floorplan-slot { @apply text-[8px]; }
+    .floorplan-slot span { @apply text-[8px]; }
+    .floorplan-left { @apply w-[12%]; }
+    .floorplan-exit { @apply w-[9%] min-w-[48px]; }
+    .floorplan-entry span, .floorplan-exit span { @apply size-9; }
+    .floorplan-entry svg, .floorplan-exit svg { @apply size-4; }
   }
   @keyframes realtime-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
   /* Hide the two dashboard panels removed by the design refinement. */
