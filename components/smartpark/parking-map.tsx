@@ -5,7 +5,7 @@ import { ArrowRight, DoorOpen, ParkingCircle, X } from 'lucide-react'
 import { parkingFloors as seedFloors, type ParkingFloor, type ParkingSlot, type ParkingSlotStatus } from '@/lib/smartpark-data'
 
 type ParkingMapMode = 'admin' | 'readonly' | 'select'
-type ParkingMapProps = { mode?: ParkingMapMode; compact?: boolean; variant?: 'default' | 'chat'; floorId?: ParkingFloor['id']; selectableSlotIds?: string[]; selectedSlotId?: string; onSelectSlot?: (slot: ParkingSlot) => void }
+type ParkingMapProps = { mode?: ParkingMapMode; compact?: boolean; variant?: 'default' | 'chat'; floorId?: ParkingFloor['id']; selectableSlotIds?: string[]; selectedSlotId?: string; onSelectSlot?: (slot: ParkingSlot) => void; onSelectionInvalidated?: (slotId: string) => void }
 type Listener = () => void
 
 const STORAGE_KEY = 'smartpark-parking-floors'
@@ -24,9 +24,12 @@ const statusOptions: { value: ParkingSlotStatus; label: string }[] = Object.entr
 const rowGroups = [['A', 'B'], ['E', 'F']] as const
 
 function LiftBlock({ central = false }: { central?: boolean }) { return <div className={`floorplan-lift ${central ? 'floorplan-lift-central' : ''}`}><div className="floorplan-stairs" /><div className="floorplan-lift-label"><ParkingCircle className="size-4" /><span>Thang máy</span></div></div> }
-function SlotButton({ slot, mode, selectableSlotIds, selectedSlotId, selected, onClick }: { slot: ParkingSlot; mode: ParkingMapMode; selectableSlotIds: string[]; selectedSlotId?: string; selected?: ParkingSlot | null; onClick: () => void }) { const selectable = mode !== 'select' || (slot.status === 'available' && selectableSlotIds.includes(slot.id)); return <button type="button" disabled={!selectable} aria-label={`${slot.id}, ${statusLabel[slot.status]}`} aria-pressed={(selectedSlotId ?? selected?.id) === slot.id} onClick={onClick} className={`floorplan-slot floorplan-slot-${slot.status} ${slot.isMine ? 'floorplan-slot-mine' : ''} ${(selectedSlotId ?? selected?.id) === slot.id ? 'floorplan-slot-selected' : ''} ${mode === 'select' && selectable ? 'floorplan-slot-recommended' : ''}`}><span>{slot.id}</span></button> }
+// Resident selection rule: any currently available slot is selectable, plus any slot the agent has
+// flagged as recommended (even ahead of its status settling to "available"). Occupied/reserved/
+// blocked/out-of-service slots stay visible for context but remain disabled.
+function SlotButton({ slot, mode, selectableSlotIds, selectedSlotId, selected, onClick }: { slot: ParkingSlot; mode: ParkingMapMode; selectableSlotIds: string[]; selectedSlotId?: string; selected?: ParkingSlot | null; onClick: () => void }) { const recommended = mode === 'select' && (slot.isAgentRecommended || selectableSlotIds.includes(slot.id)); const selectable = mode !== 'select' || slot.status === 'available' || recommended; return <button type="button" disabled={!selectable} aria-label={`${slot.id}, ${statusLabel[slot.status]}`} aria-pressed={(selectedSlotId ?? selected?.id) === slot.id} onClick={onClick} className={`floorplan-slot floorplan-slot-${slot.status} ${slot.isMine ? 'floorplan-slot-mine' : ''} ${(selectedSlotId ?? selected?.id) === slot.id ? 'floorplan-slot-selected' : ''} ${recommended ? 'floorplan-slot-recommended' : ''}`}><span>{slot.id}</span></button> }
 
-export function ParkingMap({ mode = 'readonly', compact = false, variant = 'default', floorId: initialFloorId = 'B1', selectableSlotIds = [], selectedSlotId, onSelectSlot }: ParkingMapProps) {
+export function ParkingMap({ mode = 'readonly', compact = false, variant = 'default', floorId: initialFloorId = 'B1', selectableSlotIds = [], selectedSlotId, onSelectSlot, onSelectionInvalidated }: ParkingMapProps) {
   const sharedFloors = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const [floorId, setFloorId] = useState<ParkingFloor['id']>(initialFloorId)
   const [selected, setSelected] = useState<ParkingSlot | null>(null)
@@ -36,7 +39,18 @@ export function ParkingMap({ mode = 'readonly', compact = false, variant = 'defa
   const counts = useMemo(() => ({ available: allSlots.filter((slot) => slot.status === 'available').length, occupied: allSlots.filter((slot) => slot.status === 'occupied').length, reserved: allSlots.filter((slot) => slot.status === 'reserved').length }), [allSlots])
   useEffect(() => { hydrate(); emit() }, [])
   useEffect(() => { if (selected) setSelected(floor.zones.flatMap((zone) => zone.slots).find((slot) => slot.id === selected.id) ?? null) }, [floor])
-  function selectSlot(slot: ParkingSlot) { if (mode === 'select') { if (slot.status === 'available' && selectableSlotIds.includes(slot.id)) { setSelected(slot); onSelectSlot?.(slot) }; return }; setSelected(slot); if (mode === 'admin') setEditing(true) }
+  // Realtime guard: if the shared floor store updates (admin edit, polling, etc.) and the currently
+  // selected/highlighted slot for a resident's selection is no longer available nor still recommended,
+  // invalidate the selection so the caller can prompt the resident to pick again.
+  useEffect(() => {
+    if (mode !== 'select') return
+    const currentId = selectedSlotId ?? selected?.id
+    if (!currentId) return
+    const slot = allSlots.find((item) => item.id === currentId)
+    const stillValid = !!slot && (slot.status === 'available' || slot.isAgentRecommended === true || selectableSlotIds.includes(slot.id))
+    if (!stillValid) { setSelected(null); onSelectionInvalidated?.(currentId) }
+  }, [allSlots, mode, selectedSlotId, selected, selectableSlotIds, onSelectionInvalidated])
+  function selectSlot(slot: ParkingSlot) { if (mode === 'select') { const recommended = slot.isAgentRecommended === true || selectableSlotIds.includes(slot.id); if (slot.status === 'available' || recommended) { setSelected(slot); onSelectSlot?.(slot) }; return }; setSelected(slot); if (mode === 'admin') setEditing(true) }
 
   return <div className={compact ? 'min-w-0' : 'mx-auto max-w-[1440px]'}>
     <div className="flex justify-center border-b"><div className="flex gap-2" role="tablist" aria-label="Các tầng đỗ xe">{sharedFloors.map((item) => <button key={item.id} role="tab" aria-selected={floorId === item.id} onClick={() => { setFloorId(item.id); setSelected(null); setEditing(false) }} className={`floor-tab ${floorId === item.id ? 'floor-tab-active' : ''}`}>{item.label}</button>)}</div></div>

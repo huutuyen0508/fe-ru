@@ -60,9 +60,12 @@ export const approvals = [
 
 export type ParkingRowId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
 export type ParkingSlotStatus = 'available' | 'occupied' | 'reserved' | 'special' | 'out_of_service'
-export type ParkingSlot = { id: string; floorId: 'B1' | 'B2' | 'B3'; row: ParkingRowId; status: ParkingSlotStatus; isMine?: boolean }
+export type ParkingSlot = { id: string; floorId: 'B1' | 'B2' | 'B3'; row: ParkingRowId; status: ParkingSlotStatus; isMine?: boolean; isAgentRecommended?: boolean }
 export type ParkingZone = { id: ParkingRowId; name: string; slots: ParkingSlot[] }
-export type ParkingFloor = { id: 'B1' | 'B2' | 'B3'; label: string; zones: ParkingZone[] }
+// `mapSrc` is reserved for a per-floor map asset (e.g. a dedicated floor plan image/HTML per B1/B2/B3).
+// Only one map asset exists today, so every floor points at the same asset; once distinct per-floor
+// assets are produced, update each floor's `mapSrc` independently without changing consumers.
+export type ParkingFloor = { id: 'B1' | 'B2' | 'B3'; label: string; mapSrc: string; zones: ParkingZone[] }
 
 const zoneNames = ['A', 'B', 'C', 'D', 'E', 'F'] as const
 const rowLengths = [25, 25, 20, 20, 25, 25] as const
@@ -79,6 +82,7 @@ const slotStatus = (floorIndex: number, zone: ParkingRowId, slotIndex: number): 
 export const parkingFloors: ParkingFloor[] = (['B1', 'B2', 'B3'] as const).map((id, floorIndex) => ({
   id,
   label: `${id} Floor`,
+  mapSrc: '/parkingmap.html',
   zones: zoneNames.map((zone, zoneIndex) => ({
     id: zone,
     name: `Row ${zone}`,
