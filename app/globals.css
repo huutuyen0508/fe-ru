@@ -212,6 +212,9 @@
     .floorplan-shell { @apply min-w-[1120px]; }
   }
   @keyframes realtime-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  /* Hide the two dashboard panels removed by the design refinement. */
+  main.mx-auto.min-w-0 > section.mt-4.grid:nth-of-type(2) > article.panel.p-5:first-child,
+  main.mx-auto.min-w-0 > section.mt-4.grid:nth-of-type(3) > article.panel.p-5:nth-of-type(2) { display: none; }
   .alert-row, .notification-row { @apply flex items-start gap-4 border-b p-4 transition last:border-0 hover:bg-muted/50; }
   .alert-icon { @apply grid size-10 shrink-0 place-items-center rounded-xl; }
   .alert-icon svg { @apply size-5; }
