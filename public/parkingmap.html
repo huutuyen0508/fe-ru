@@ -69,6 +69,10 @@
       );
     }
 
+    .map-container {
+      transition: opacity 180ms ease;
+    }
+
     .floor-selector {
       display: flex;
       justify-content: center;
@@ -99,7 +103,7 @@
 <!-- Header -->
 <header class="map-header mb-6 flex justify-between items-end border-b pb-4">
 <div>
-<h1 class="text-3xl font-bold text-gray-900 tracking-tight">Ground Floor Plan</h1>
+<h1 id="floor-title" class="text-3xl font-bold text-gray-900 tracking-tight">B1 Floor Plan</h1>
 <p class="text-gray-500 text-sm mt-1">Live parking availability and zoning.</p>
 </div>
 <!-- BEGIN: Legend -->
@@ -269,7 +273,14 @@
   const b2Map = b1Map.cloneNode(true);
   b2Map.id = 'b2-map';
   b2Map.hidden = true;
+  b2Map.style.display = 'none';
   b1Map.parentNode.insertBefore(b2Map, b1Map.nextSibling);
+
+  const b2Statuses = ['occ', 'avail', 'resv', 'occ', 'avail', 'resv', 'occ', 'avail', 'occ', 'resv', 'avail', 'occ'];
+  b2Map.querySelectorAll('.slot').forEach((slot, index) => {
+    statusClasses.forEach((className) => slot.classList.remove(className));
+    slot.classList.add(b2Statuses[index % b2Statuses.length]);
+  });
 
   function bindSlots(map) {
     map.querySelectorAll('.slot').forEach((slot) => {
@@ -290,9 +301,20 @@
   document.querySelectorAll('[data-floor]').forEach((button) => {
     button.addEventListener('click', () => {
       const floor = button.dataset.floor;
+      const nextMap = floor === 'B1' ? b1Map : b2Map;
+      const previousMap = floor === 'B1' ? b2Map : b1Map;
+      const title = document.getElementById('floor-title');
       closePopover();
-      b1Map.hidden = floor !== 'B1';
-      b2Map.hidden = floor !== 'B2';
+      previousMap.style.opacity = '0';
+      nextMap.hidden = false;
+      nextMap.style.display = 'flex';
+      nextMap.style.opacity = '0';
+      requestAnimationFrame(() => {
+        previousMap.hidden = true;
+        previousMap.style.display = 'none';
+        nextMap.style.opacity = '1';
+        title.textContent = floor + ' Floor Plan';
+      });
       document.querySelectorAll('[data-floor]').forEach((floorButton) => {
         const isActive = floorButton.dataset.floor === floor;
         floorButton.classList.toggle('active', isActive);
