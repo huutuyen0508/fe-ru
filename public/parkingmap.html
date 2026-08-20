@@ -335,6 +335,28 @@
   b2Map.style.display = 'none';
   b1Map.parentNode.insertBefore(b2Map, b1Map.nextSibling);
 
+  function readAdminSession() {
+    if (residentMode) return null;
+    try {
+      const session = JSON.parse(localStorage.getItem('smartpark-resident-parking-session') || 'null');
+      return session?.slotId && (session.floorId === 'B1' || session.floorId === 'B2') && session.expiresAt > Date.now() ? session : null;
+    } catch { return null; }
+  }
+
+  function applyAdminReservation() {
+    if (residentMode) return;
+    const session = readAdminSession();
+    [b1Map, b2Map].forEach((map) => map.querySelectorAll('.slot').forEach((slot) => {
+      const label = slot.querySelector('span');
+      if (!label) return;
+      if (!label.dataset.baseLabel) label.dataset.baseLabel = label.textContent;
+      const isReserved = session && session.floorId === (map.id === 'b1-map' ? 'B1' : 'B2') && label.dataset.baseLabel === session.slotId;
+      label.textContent = isReserved ? '********' : label.dataset.baseLabel;
+      slot.classList.toggle('resident-reservation-overlay', Boolean(isReserved));
+      slot.setAttribute('aria-label', isReserved ? `${session.slotId}, temporary resident reservation` : label.dataset.baseLabel);
+    }));
+  }
+
   const b2Statuses = ['occ', 'avail', 'resv', 'occ', 'avail', 'resv', 'occ', 'avail', 'occ', 'resv', 'avail', 'occ'];
   b2Map.querySelectorAll('.slot').forEach((slot, index) => {
     statusClasses.forEach((className) => slot.classList.remove(className));
@@ -366,6 +388,13 @@
 
   bindSlots(b1Map);
   bindSlots(b2Map);
+  applyAdminReservation();
+  if (!residentMode) {
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'smartpark-resident-parking-session') applyAdminReservation();
+    });
+    window.setInterval(applyAdminReservation, 1000);
+  }
 
   document.querySelectorAll('[data-floor]').forEach((button) => {
     button.addEventListener('click', () => {
