@@ -12,14 +12,39 @@ export function ResidentDashboard() {
   const [selectedFloor, setSelectedFloor] = useState('B1')
   const [reservationExpiresAt, setReservationExpiresAt] = useState<number | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState(0)
+  const sessionKey = 'smartpark-resident-parking-session'
+
+  function syncReservationToMap() {
+    const iframe = document.querySelector<HTMLIFrameElement>('iframe[src*="parkingmap.html"]')
+    iframe?.contentWindow?.postMessage({ type: 'resident-parking-session-state', active: Boolean(reservationExpiresAt && reservationExpiresAt > Date.now()), slotId: selectedSpot, floorId: selectedFloor, expiresAt: reservationExpiresAt }, window.location.origin)
+  }
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(sessionKey)
+    if (!raw) return
+    try {
+      const session = JSON.parse(raw) as { slotId?: string; floorId?: string; expiresAt?: number }
+      if (!session.slotId || !session.floorId || !session.expiresAt || session.expiresAt <= Date.now()) {
+        window.localStorage.removeItem(sessionKey)
+        return
+      }
+      setSelectedSpot(session.slotId)
+      setSelectedFloor(session.floorId)
+      setReservationExpiresAt(session.expiresAt)
+    } catch {
+      window.localStorage.removeItem(sessionKey)
+    }
+  }, [])
 
   useEffect(() => {
     function onMessage(event: MessageEvent<{ type?: string; slotId?: string; floorId?: string }>) {
       if (event.origin !== window.location.origin || event.source !== window.frames[0]) return
       if (event.data?.type !== 'resident-parking-confirmed' || !event.data.slotId || !event.data.floorId) return
+      const expiresAt = Date.now() + 15 * 60 * 1000
       setSelectedSpot(event.data.slotId)
       setSelectedFloor(event.data.floorId)
-      setReservationExpiresAt(Date.now() + 15 * 60 * 1000)
+      setReservationExpiresAt(expiresAt)
+      window.localStorage.setItem(sessionKey, JSON.stringify({ slotId: event.data.slotId, floorId: event.data.floorId, expiresAt }))
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -27,15 +52,26 @@ export function ResidentDashboard() {
 
   useEffect(() => {
     if (!reservationExpiresAt) return
-    const update = () => setRemainingSeconds(Math.max(0, Math.ceil((reservationExpiresAt - Date.now()) / 1000)))
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((reservationExpiresAt - Date.now()) / 1000))
+      setRemainingSeconds(remaining)
+      if (remaining === 0) {
+        window.localStorage.removeItem(sessionKey)
+        setReservationExpiresAt(null)
+      }
+    }
     update()
     const interval = window.setInterval(update, 1000)
     return () => window.clearInterval(interval)
   }, [reservationExpiresAt])
 
+  useEffect(() => {
+    syncReservationToMap()
+  }, [reservationExpiresAt, selectedSpot, selectedFloor])
+
   const countdown = remainingSeconds ? `${Math.floor(remainingSeconds / 60)}m ${String(remainingSeconds % 60).padStart(2, '0')}s` : '15m 00s'
 
-  return <ResidentShell><PageHeader eyebrow="Cổng cư dân" title="Chào mừng Olivia trở lại" description="Trợ lý AI đã giữ chỗ đỗ cho lượt về tối nay của bạn." /><section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3"><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Chỗ đỗ hiện tại</span><span className="stat-icon stat-success"><ShieldCheck /></span></div><div className="mt-5 flex items-baseline gap-3"><span className="font-mono text-4xl font-bold tracking-tight text-primary">{selectedSpot}</span><span className="text-sm text-muted-foreground">{selectedFloor} Floor</span></div><p className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><span className="grid size-6 place-items-center rounded-full bg-success/10"><Check className="size-3.5" /></span>Xe đang đỗ · Đang hoạt động</p></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Xe</span><span className="stat-icon stat-primary"><CarFront /></span></div><div className="mt-5 flex flex-col gap-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold">8ABC123</span><span className="max-w-[9rem] rounded-md bg-primary/10 px-2 py-1 text-right text-xs text-primary">Tesla Model 3</span></div><div className="flex items-center justify-between gap-3 opacity-60"><span className="font-mono text-sm">6PARK42</span><span className="max-w-[9rem] rounded-md bg-muted px-2 py-1 text-right text-xs text-muted-foreground">Volvo XC40 · Vắng mặt</span></div></div></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Đặt chỗ</span><span className="stat-icon stat-warning"><Clock3 /></span></div><p className="mt-5 text-3xl font-bold tracking-tight">{countdown}</p><p className="mt-2 text-xs text-muted-foreground">Kết thúc ngày mai, 10:00</p><button className="button-secondary mt-4 w-full justify-center">Gia hạn thời gian đỗ</button></article></section><section className="mt-6 grid min-w-0 grid-cols-1 gap-4"><article className="panel min-w-0 p-5"><div className="mb-4"><h2 className="panel-title">Live floor map</h2><p className="panel-subtitle">Real-time availability monitoring</p></div><div className="mt-6 w-full min-w-0 overflow-x-auto"><iframe src="/parkingmap.html?mode=resident" title="SmartPark Parking Map" className="block h-[calc(100vh-190px)] min-h-[820px] w-full min-w-0 border-0" /></div></article></section></ResidentShell>
+  return <ResidentShell><PageHeader eyebrow="Cổng cư dân" title="Chào mừng Olivia trở lại" description="Trợ lý AI đã giữ chỗ đỗ cho lượt về tối nay của bạn." /><section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3"><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Chỗ đỗ hiện tại</span><span className="stat-icon stat-success"><ShieldCheck /></span></div><div className="mt-5 flex items-baseline gap-3"><span className="font-mono text-4xl font-bold tracking-tight text-primary">{selectedSpot}</span><span className="text-sm text-muted-foreground">{selectedFloor} Floor</span></div><p className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><span className="grid size-6 place-items-center rounded-full bg-success/10"><Check className="size-3.5" /></span>Xe đang đỗ · Đang hoạt động</p></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Xe</span><span className="stat-icon stat-primary"><CarFront /></span></div><div className="mt-5 flex flex-col gap-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold">8ABC123</span><span className="max-w-[9rem] rounded-md bg-primary/10 px-2 py-1 text-right text-xs text-primary">Tesla Model 3</span></div><div className="flex items-center justify-between gap-3 opacity-60"><span className="font-mono text-sm">6PARK42</span><span className="max-w-[9rem] rounded-md bg-muted px-2 py-1 text-right text-xs text-muted-foreground">Volvo XC40 · Vắng mặt</span></div></div></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Đặt chỗ</span><span className="stat-icon stat-warning"><Clock3 /></span></div><p className="mt-5 text-3xl font-bold tracking-tight">{countdown}</p><p className="mt-2 text-xs text-muted-foreground">Kết thúc ngày mai, 10:00</p><button className="button-secondary mt-4 w-full justify-center">Gia hạn thời gian đỗ</button></article></section><section className="mt-6 grid min-w-0 grid-cols-1 gap-4"><article className="panel min-w-0 p-5"><div className="mb-4"><h2 className="panel-title">Live floor map</h2><p className="panel-subtitle">Real-time availability monitoring</p></div><div className="mt-6 w-full min-w-0 overflow-x-auto"><iframe src="/parkingmap.html?mode=resident" onLoad={syncReservationToMap} title="SmartPark Parking Map" className="block h-[calc(100vh-190px)] min-h-[820px] w-full min-w-0 border-0" /></div></article></section></ResidentShell>
 }
 function ResidentStat({value,label}:{value:string;label:string}){return <div className="rounded-xl bg-muted/60 p-4"><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></div>}
 function Quick({href,icon:Icon,title,text}:{href:string;icon:typeof CarFront;title:string;text:string}){return <Link href={href} className="panel group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"><span className="stat-icon stat-primary"><Icon /></span><div><p className="font-semibold group-hover:text-primary">{title}</p><p className="text-xs text-muted-foreground">{text}</p></div></Link>}

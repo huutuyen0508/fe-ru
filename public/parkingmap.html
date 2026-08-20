@@ -117,6 +117,7 @@
 </header>
 <!-- BEGIN: Map Area -->
 <main class="w-full relative">
+<div class="resident-lock-banner" role="status" aria-live="polite"><strong>Parking session active</strong><span class="resident-lock-copy"></span></div>
 <div class="floor-selector" role="group" aria-label="Select parking floor">
   <button type="button" class="active" data-floor="B1" aria-pressed="true">B1 Floor</button>
   <button type="button" data-floor="B2" aria-pressed="false">B2 Floor</button>
@@ -229,6 +230,10 @@
   .resident-confirm .cancel { background: #f3f4f6; color: #374151; }
   body.resident-mode .slot { cursor: not-allowed; }
   body.resident-mode .slot.avail, body.resident-mode .slot.mine { cursor: pointer; }
+  body.resident-mode.resident-locked .slot { cursor: not-allowed; pointer-events: none; }
+  body.resident-mode.resident-locked .floor-selector button { cursor: not-allowed; opacity: .5; pointer-events: none; }
+  .resident-lock-banner { display: none; gap: 8px; margin: 0 auto 12px; max-width: 440px; padding: 10px 14px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; color: #1e40af; font: 600 12px/1.35 system-ui, sans-serif; }
+  body.resident-mode.resident-locked .resident-lock-banner { display: flex; flex-direction: column; }
 </style>
 <script>
 (() => {
@@ -241,6 +246,26 @@
   ];
   const residentMode = new URLSearchParams(window.location.search).get('mode') === 'resident';
   if (residentMode) document.body.classList.add('resident-mode');
+  let residentSession = null;
+  function applyResidentSession(session) {
+    if (!residentMode) return;
+    residentSession = session?.active && session.expiresAt > Date.now() ? session : null;
+    if (residentSession) closePopover();
+    document.body.classList.toggle('resident-locked', Boolean(residentSession));
+    const copy = document.querySelector('.resident-lock-copy');
+    if (copy) copy.textContent = residentSession ? `${residentSession.slotId} · ${residentSession.floorId} Floor · session locked` : '';
+    if (residentSession) {
+      const floorButton = document.querySelector(`[data-floor="${residentSession.floorId}"]`);
+      floorButton?.click();
+    }
+  }
+  if (residentMode) {
+    try { applyResidentSession(JSON.parse(localStorage.getItem('smartpark-resident-parking-session') || 'null')); } catch { applyResidentSession(null); }
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent || event.data?.type !== 'resident-parking-session-state') return;
+      applyResidentSession(event.data);
+    });
+  }
   let popover;
   let activeSlot;
   let activeResidentMap;
@@ -325,6 +350,7 @@
       const activate = (event) => {
         event.stopPropagation();
         if (residentMode) {
+          if (residentSession) return;
           if (!slot.classList.contains('avail') && !slot.classList.contains('mine')) return;
           openResidentConfirm(slot, map);
         } else {
