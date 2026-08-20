@@ -68,6 +68,29 @@
         #9ca3af 5px
       );
     }
+
+    .floor-selector {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .floor-selector button {
+      border: 1px solid #d1d5db;
+      border-radius: 0.5rem;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+      font: 600 0.875rem/1.25rem system-ui, sans-serif;
+      padding: 0.5rem 1rem;
+    }
+
+    .floor-selector button.active {
+      border-color: #2563eb;
+      color: #2563eb;
+      background: #eff6ff;
+    }
   </style>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"></head>
 <body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-800">
@@ -90,8 +113,12 @@
 </header>
 <!-- BEGIN: Map Area -->
 <main class="w-full relative">
+<div class="floor-selector" role="group" aria-label="Select parking floor">
+  <button type="button" class="active" data-floor="B1" aria-pressed="true">B1 Floor</button>
+  <button type="button" data-floor="B2" aria-pressed="false">B2 Floor</button>
+</div>
 <!-- The main floorplan wrapper -->
-<div class="map-container border-8 border-gray-800 rounded-sm flex shadow-inner">
+<div id="b1-map" class="map-container border-8 border-gray-800 rounded-sm flex shadow-inner">
 <!-- BEGIN: Left Infrastructure Column (Entrance, Stairs) -->
 <div class="w-[8%] h-full border-r-4 border-gray-400 flex flex-col bg-white relative z-10">
 <!-- Top Stairs Block -->
@@ -238,14 +265,39 @@
     popover.style.top = Math.max(8, top) + 'px';
   }
 
-  document.querySelectorAll('.slot').forEach((slot) => {
-    const label = slot.querySelector('span')?.textContent?.trim() || 'parking slot';
-    slot.setAttribute('role', 'button');
-    slot.setAttribute('tabindex', '0');
-    slot.setAttribute('aria-label', label + ', choose status');
-    slot.addEventListener('click', (event) => { event.stopPropagation(); openPopover(slot); });
-    slot.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPopover(slot); }
+  const b1Map = document.getElementById('b1-map');
+  const b2Map = b1Map.cloneNode(true);
+  b2Map.id = 'b2-map';
+  b2Map.hidden = true;
+  b1Map.parentNode.insertBefore(b2Map, b1Map.nextSibling);
+
+  function bindSlots(map) {
+    map.querySelectorAll('.slot').forEach((slot) => {
+      const label = slot.querySelector('span')?.textContent?.trim() || 'parking slot';
+      slot.setAttribute('role', 'button');
+      slot.setAttribute('tabindex', '0');
+      slot.setAttribute('aria-label', label + ', choose status');
+      slot.addEventListener('click', (event) => { event.stopPropagation(); openPopover(slot); });
+      slot.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPopover(slot); }
+      });
+    });
+  }
+
+  bindSlots(b1Map);
+  bindSlots(b2Map);
+
+  document.querySelectorAll('[data-floor]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const floor = button.dataset.floor;
+      closePopover();
+      b1Map.hidden = floor !== 'B1';
+      b2Map.hidden = floor !== 'B2';
+      document.querySelectorAll('[data-floor]').forEach((floorButton) => {
+        const isActive = floorButton.dataset.floor === floor;
+        floorButton.classList.toggle('active', isActive);
+        floorButton.setAttribute('aria-pressed', String(isActive));
+      });
     });
   });
   document.addEventListener('click', (event) => { if (popover && !popover.contains(event.target)) closePopover(); });
