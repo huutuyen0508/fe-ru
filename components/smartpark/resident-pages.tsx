@@ -7,13 +7,15 @@ import { FormEvent, useEffect, useState } from 'react'
 import { Modal, PageHeader, ResidentShell, Status } from './shell'
 import { ParkingMap } from './parking-map'
 import { clearResidentParkingSession, getResidentParkingSession, saveResidentParkingSession } from '@/lib/resident-parking-session'
+import { getResidentLastParking, saveResidentLastParking } from '@/lib/resident-last-parking'
+import { addResidentNotification } from '@/lib/resident-notifications'
 
 export function ResidentDashboard() {
   const [selectedSpot, setSelectedSpot] = useState('A-024')
   const [selectedFloor, setSelectedFloor] = useState('B1')
   const [reservationExpiresAt, setReservationExpiresAt] = useState<number | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState(0)
-  const sessionKey = 'smartpark-resident-parking-session'
+  const [isActiveReservation, setIsActiveReservation] = useState(false)
   const primaryVehiclePlate = '8ABC123'
 
   function syncReservationToMap() {
@@ -23,10 +25,14 @@ export function ResidentDashboard() {
 
   useEffect(() => {
     const session = getResidentParkingSession()
-    if (!session) return
-    setSelectedSpot(session.slotId)
-    setSelectedFloor(session.floorId)
-    setReservationExpiresAt(session.expiresAt)
+    const parking = session || getResidentLastParking()
+    if (!parking) return
+    setSelectedSpot(parking.slotId)
+    setSelectedFloor(parking.floorId)
+    if (session) {
+      setReservationExpiresAt(session.expiresAt)
+      setIsActiveReservation(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -37,7 +43,10 @@ export function ResidentDashboard() {
       setSelectedSpot(event.data.slotId)
       setSelectedFloor(event.data.floorId)
       setReservationExpiresAt(expiresAt)
+      setIsActiveReservation(true)
       saveResidentParkingSession({ slotId: event.data.slotId, floorId: event.data.floorId as 'B1' | 'B2', expiresAt, vehiclePlate: primaryVehiclePlate })
+      saveResidentLastParking({ slotId: event.data.slotId, floorId: event.data.floorId as 'B1' | 'B2', vehiclePlate: primaryVehiclePlate, confirmedAt: Date.now() })
+      addResidentNotification({ id: `parking_reserved-${event.data.slotId}-${expiresAt}`, type: 'parking_reserved', title: 'Đặt chỗ thành công', message: `Bạn đã đặt vị trí ${event.data.slotId} tại tầng ${event.data.floorId}. Vị trí được giữ trong 15 phút.` })
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -49,14 +58,18 @@ export function ResidentDashboard() {
       const remaining = Math.max(0, Math.ceil((reservationExpiresAt - Date.now()) / 1000))
       setRemainingSeconds(remaining)
       if (remaining === 0) {
+        const expiredSpot = selectedSpot
+        const expiredFloor = selectedFloor
         clearResidentParkingSession()
+        setIsActiveReservation(false)
+        addResidentNotification({ id: `parking_expired-${expiredSpot}-${reservationExpiresAt}`, type: 'parking_expired', title: 'Phiên giữ chỗ đã kết thúc', message: `Thời gian giữ vị trí ${expiredSpot} tại tầng ${expiredFloor} đã hết.` })
         setReservationExpiresAt(null)
       }
     }
     update()
     const interval = window.setInterval(update, 1000)
     return () => window.clearInterval(interval)
-  }, [reservationExpiresAt])
+  }, [reservationExpiresAt, selectedSpot, selectedFloor])
 
   useEffect(() => {
     syncReservationToMap()
@@ -64,7 +77,7 @@ export function ResidentDashboard() {
 
   const countdown = remainingSeconds ? `${Math.floor(remainingSeconds / 60)}m ${String(remainingSeconds % 60).padStart(2, '0')}s` : '15m 00s'
 
-  return <ResidentShell><PageHeader eyebrow="Cổng cư dân" title="Chào mừng Olivia trở lại" description="Trợ lý AI đã giữ chỗ đỗ cho lượt về tối nay của bạn." /><section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3"><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Chỗ đỗ hiện tại</span><span className="stat-icon stat-success"><ShieldCheck /></span></div><div className="mt-5 flex items-baseline gap-3"><span className="font-mono text-4xl font-bold tracking-tight text-primary">{selectedSpot}</span><span className="text-sm text-muted-foreground">{selectedFloor} Floor</span></div><p className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><span className="grid size-6 place-items-center rounded-full bg-success/10"><Check className="size-3.5" /></span>Xe đang đỗ · Đang hoạt động</p></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Xe</span><span className="stat-icon stat-primary"><CarFront /></span></div><div className="mt-5 flex flex-col gap-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold">8ABC123</span><span className="max-w-[9rem] rounded-md bg-primary/10 px-2 py-1 text-right text-xs text-primary">Tesla Model 3</span></div><div className="flex items-center justify-between gap-3 opacity-60"><span className="font-mono text-sm">6PARK42</span><span className="max-w-[9rem] rounded-md bg-muted px-2 py-1 text-right text-xs text-muted-foreground">Volvo XC40 · Vắng mặt</span></div></div></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Đặt chỗ</span><span className="stat-icon stat-warning"><Clock3 /></span></div><p className="mt-5 text-3xl font-bold tracking-tight">{countdown}</p><p className="mt-2 text-xs text-muted-foreground">Kết thúc ngày mai, 10:00</p><button className="button-secondary mt-4 w-full justify-center">Gia hạn thời gian đỗ</button></article></section><section className="mt-6 grid min-w-0 grid-cols-1 gap-4"><article className="panel min-w-0 p-5"><div className="mb-4"><h2 className="panel-title">Live floor map</h2><p className="panel-subtitle">Real-time availability monitoring</p></div><div className="mt-6 w-full min-w-0 overflow-x-auto"><iframe src="/parkingmap.html?mode=resident" onLoad={syncReservationToMap} title="SmartPark Parking Map" className="block h-[calc(100vh-190px)] min-h-[820px] w-full min-w-0 border-0" /></div></article></section></ResidentShell>
+  return <ResidentShell><PageHeader eyebrow="Cổng cư dân" title="Chào mừng Olivia trở lại" description="Trợ lý AI đã giữ chỗ đỗ cho lượt về tối nay của bạn." /><section className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3"><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Chỗ đỗ hiện tại</span><span className="stat-icon stat-success"><ShieldCheck /></span></div><div className="mt-5 flex items-baseline gap-3"><span className="font-mono text-4xl font-bold tracking-tight text-primary">{selectedSpot}</span><span className="text-sm text-muted-foreground">{selectedFloor} Floor</span></div><p className="mt-4 flex items-center gap-2 text-sm font-medium text-success"><span className="grid size-6 place-items-center rounded-full bg-success/10"><Check className="size-3.5" /></span>{isActiveReservation ? 'Đang giữ chỗ · Đang hoạt động' : 'Vị trí đặt gần nhất'}</p></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Xe</span><span className="stat-icon stat-primary"><CarFront /></span></div><div className="mt-5 flex flex-col gap-3"><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm font-semibold">8ABC123</span><span className="max-w-[9rem] rounded-md bg-primary/10 px-2 py-1 text-right text-xs text-primary">Tesla Model 3</span></div><div className="flex items-center justify-between gap-3 opacity-60"><span className="font-mono text-sm">6PARK42</span><span className="max-w-[9rem] rounded-md bg-muted px-2 py-1 text-right text-xs text-muted-foreground">Volvo XC40 · Vắng mặt</span></div></div></article><article className="panel min-w-0 p-6"><div className="flex items-center justify-between"><span className="section-kicker">Đặt chỗ</span><span className="stat-icon stat-warning"><Clock3 /></span></div><p className="mt-5 text-3xl font-bold tracking-tight">{countdown}</p><p className="mt-2 text-xs text-muted-foreground">Kết thúc ngày mai, 10:00</p><button className="button-secondary mt-4 w-full justify-center">Gia hạn thời gian đỗ</button></article></section><section className="mt-6 grid min-w-0 grid-cols-1 gap-4"><article className="panel min-w-0 p-5"><div className="mb-4"><h2 className="panel-title">Live floor map</h2><p className="panel-subtitle">Real-time availability monitoring</p></div><div className="mt-6 w-full min-w-0 overflow-x-auto"><iframe src="/parkingmap.html?mode=resident" onLoad={syncReservationToMap} title="SmartPark Parking Map" className="block h-[calc(100vh-190px)] min-h-[820px] w-full min-w-0 border-0" /></div></article></section></ResidentShell>
 }
 function ResidentStat({value,label}:{value:string;label:string}){return <div className="rounded-xl bg-muted/60 p-4"><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></div>}
 function Quick({href,icon:Icon,title,text}:{href:string;icon:typeof CarFront;title:string;text:string}){return <Link href={href} className="panel group flex items-center gap-4 p-5 transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"><span className="stat-icon stat-primary"><Icon /></span><div><p className="font-semibold group-hover:text-primary">{title}</p><p className="text-xs text-muted-foreground">{text}</p></div></Link>}
@@ -83,7 +96,7 @@ export function MyVehiclesPage() {
 
 export function RegisterVehiclePage(){
   const router=useRouter(); const [step,setStep]=useState(1); const [plate,setPlate]=useState(''); const [vehicleType,setVehicleType]=useState<'motorcycle'|'car'|''>(''); const [engineType,setEngineType]=useState<'electric'|'gasoline'|''>('');
-  function next(e:FormEvent){e.preventDefault(); if(step===1 && plate.trim()) setStep(2); else if(step===2 && vehicleType && engineType) setStep(3); else if(step===3) setStep(4)}
+  function next(e:FormEvent){e.preventDefault(); if(step===1 && plate.trim()) setStep(2); else if(step===2 && vehicleType && engineType) setStep(3); else if(step===3) { setStep(4); addResidentNotification({ id: `vehicle_registered-${plate.trim()}`, type: 'vehicle_registered', title: 'Đăng ký xe thành công', message: `Yêu cầu đăng ký xe ${plate.trim()} đã được gửi và đang chờ phê duyệt.` }) }}
   const typeLabel=vehicleType==='motorcycle'?'Xe máy (Motorcycle)':vehicleType==='car'?'Ô tô (Car)':''; const engineLabel=engineType==='electric'?'Xe điện':'Xe xăng';
   return <ResidentShell><div className="mx-auto max-w-3xl"><div className="mb-7 text-center"><PageHeader title="Đăng ký xe" description="Thêm xe vào tài khoản cư dân của bạn." /></div><div className="mx-auto mb-8 flex max-w-sm items-center gap-3">{[1,2,3].map(n=><div key={n} className="flex min-w-0 flex-1 items-center gap-3"><span className={`step-dot size-8 shrink-0 text-xs ${step>=n?'step-dot-active':'bg-primary/5 text-primary/45'}`}>{step>n?<Check/>:n}</span>{n<3&&<span className={`h-px flex-1 ${step>n?'bg-primary':'bg-primary/15'}`}/>}</div>)}</div><section className="panel mx-auto max-w-[740px] rounded-xl border bg-card p-5 shadow-[0_8px_28px_rgba(20,33,61,.06)] sm:p-8">{step===4?<div className="py-10 text-center"><span className="mx-auto grid size-16 place-items-center rounded-full bg-success/10 text-success"><Check className="size-8"/></span><h2 className="mt-5 text-2xl font-bold">Vehicle submitted</h2><p className="mt-2 text-sm text-muted-foreground">Your registration is pending administrator approval.</p><button className="button-primary mt-6" onClick={()=>router.push('/resident/vehicles')}>Return to my vehicles</button></div>:<form onSubmit={next} className="flex flex-col gap-6"><div><p className="section-kicker">{step===3?'BƯỚC 3 / 3':`BƯỚC ${step} / 3`}</p><h2 className="mt-2 text-xl font-semibold">{step===1?'Nhập biển số xe':step===2?'Step 2 of 3: Vehicle details':'Xem lại đăng ký'}</h2></div>{step===1&&<label className="field"><span>Biển số xe</span><input value={plate} onChange={e=>setPlate(e.target.value.toUpperCase())} placeholder="Ví dụ: 51F-123.45" required/></label>}{step===2&&<div className="flex flex-col gap-7"><fieldset><legend className="mb-3 text-sm font-semibold">Loại xe</legend><div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>setVehicleType('motorcycle')} className={`selection-button ${vehicleType==='motorcycle'?'selection-button-selected':''}`}>Xe máy</button><button type="button" onClick={()=>setVehicleType('car')} className={`selection-button ${vehicleType==='car'?'selection-button-selected':''}`}>Ô tô</button></div></fieldset><fieldset><legend className="mb-3 text-sm font-semibold">Loại động cơ</legend><div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>setEngineType('electric')} className={`selection-button ${engineType==='electric'?'selection-button-selected':''}`}>Xe điện</button><button type="button" onClick={()=>setEngineType('gasoline')} className={`selection-button ${engineType==='gasoline'?'selection-button-selected':''}`}>Xe xăng</button></div></fieldset></div>}{step===3&&<div className="rounded-xl border border-primary/15 bg-primary/5 p-5"><Review label="Biển số xe" value={plate}/><Review label="Loại xe" value={typeLabel}/><Review label="Loại động cơ" value={engineLabel}/></div>}<div className="flex items-center justify-between border-t pt-6"><button type="button" className="button-secondary px-5" onClick={()=>step===1?router.push('/resident/vehicles'):setStep(step-1)}>Quay lại</button><button type="submit" className="button-primary px-5" disabled={(step===1&&!plate.trim())||(step===2&&(!vehicleType||!engineType))}>{step===3?'Gửi đăng ký':'Tiếp tục'}</button></div></form>}</section></div></ResidentShell>
 }
@@ -91,7 +104,7 @@ function Review({label,value}:{label:string;value:string}){return <div className
 
 export function GuestParkingPage(){
   const [tab,setTab]=useState('Active'); const [open,setOpen]=useState(false); const [passes,setPasses]=useState([{name:'Sarah Miller',plate:'7GUEST1',window:'Today · 2:00 PM–8:00 PM',status:'Active',code:'GP-2094'},{name:'Daniel Lee',plate:'4VISIT8',window:'Aug 10 · 9:00 AM–4:00 PM',status:'Upcoming',code:'GP-2112'}]);
-  function create(e:FormEvent){e.preventDefault();setPasses([...passes,{name:'New Guest',plate:'PENDING',window:'Tomorrow · 9:00 AM–5:00 PM',status:'Upcoming',code:`GP-${2200+passes.length}`}]);setOpen(false)}
+  function create(e:FormEvent){e.preventDefault(); const code=`GP-${2200+passes.length}`; setPasses([...passes,{name:'New Guest',plate:'PENDING',window:'Tomorrow · 9:00 AM–5:00 PM',status:'Upcoming',code}]); addResidentNotification({ id: `guest_pass_created-${code}`, type: 'guest_pass_created', title: 'Đã tạo vé đỗ xe khách', message: `Vé đỗ xe khách ${code} đã được tạo thành công.` }); setOpen(false)}
   const shown=passes.filter(p=>tab==='History'?false:p.status===tab)
   return <ResidentShell><PageHeader title="Đỗ xe khách" description="Tạo và quản lý quyền đỗ xe tạm thời cho khách của bạn." action={<button className="button-primary" onClick={()=>setOpen(true)}><Plus/>Create guest pass</button>} /><section className="mb-4 grid gap-4 sm:grid-cols-3"><ResidentStat value="1" label="Active pass"/><ResidentStat value="3" label="Passes this month"/><ResidentStat value="22h" label="Đỗ xe khách time"/></section><div className="panel overflow-hidden"><div className="flex gap-2 border-b p-4">{['Active','Upcoming','History'].map(t=><button key={t} onClick={()=>setTab(t)} className={`filter-chip ${tab===t?'filter-chip-active':''}`}>{t}</button>)}</div><div className="grid gap-4 p-4 lg:grid-cols-2">{shown.map(p=><article key={p.code} className="rounded-xl border p-5"><div className="flex items-start justify-between"><div><Status tone={p.status==='Active'?'success':'info'}>{p.status}</Status><h3 className="mt-3 text-lg font-semibold">{p.name}</h3><p className="font-mono text-sm text-muted-foreground">{p.plate}</p></div><div className="qr-mark" aria-label="QR code"><QrCode/></div></div><div className="mt-5 rounded-xl bg-muted p-3 text-sm"><p className="flex items-center gap-2"><Clock3 className="size-4 text-primary"/>{p.window}</p><p className="mt-2 flex items-center gap-2"><MapPin className="size-4 text-primary"/>Guest Zone · Level G</p></div><div className="mt-4 flex gap-2"><button className="button-secondary flex-1 justify-center" onClick={()=>navigator.clipboard?.writeText(p.code)}><Copy/>Copy</button><button className="button-secondary flex-1 justify-center"><Share2/>Share</button><button className="icon-button text-destructive" onClick={()=>setPasses(passes.filter(x=>x.code!==p.code))}><Trash2/></button></div></article>)}{!shown.length&&<div className="col-span-full py-14 text-center"><Users className="mx-auto size-8 text-muted-foreground"/><p className="mt-3 font-semibold">No {tab.toLowerCase()} guest passes</p></div>}</div></div><Modal open={open} onClose={()=>setOpen(false)} title="Create guest pass"><form onSubmit={create} className="flex flex-col gap-4"><label className="field"><span>Guest name</span><input placeholder="Full name" required/></label><label className="field"><span>License plate</span><input placeholder="License plate" required/></label><div className="grid gap-4 sm:grid-cols-2"><label className="field"><span>Arrival</span><input type="datetime-local" required/></label><label className="field"><span>Departure</span><input type="datetime-local" required/></label></div><label className="field"><span>Notes</span><textarea rows={3} placeholder="Optional instructions"/></label><button className="button-primary justify-center"><KeyRound/>Create pass</button></form></Modal></ResidentShell>
 }

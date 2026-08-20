@@ -3,11 +3,12 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Bell, CarFront, ChartNoAxesCombined, ChevronDown, ClipboardCheck, LayoutDashboard,
+  Bell, CarFront, ChartNoAxesCombined, Check, ChevronDown, ClipboardCheck, LayoutDashboard,
   LogOut, Map, Menu, Moon, ParkingCircle, Search, Settings, Sparkles, Sun, TriangleAlert, Users, X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { nav } from '@/lib/smartpark-data'
+import { formatNotificationAge, getResidentNotifications, markAllResidentNotificationsRead, markResidentNotificationRead, RESIDENT_NOTIFICATIONS_EVENT, type ResidentNotification } from '@/lib/resident-notifications'
 
 const iconMap = { Bell, CarFront, ChartNoAxesCombined, ClipboardCheck, LayoutDashboard, Map, Settings, Sparkles, TriangleAlert, Users }
 
@@ -59,10 +60,28 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
 export function ResidentShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
+  const [notifications, setNotifications] = useState<ResidentNotification[]>([])
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [toast, setToast] = useState<ResidentNotification | null>(null)
   const links = [
     ['/resident', 'Trang chủ', LayoutDashboard], ['/resident/assistant', 'Trợ lý', Sparkles], ['/resident/vehicles', 'Xe của tôi', CarFront], ['/resident/guest-parking', 'Đỗ xe khách', Users],
   ] as const
-  return <div className="min-h-screen bg-muted/40"><header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur"><div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 md:px-7"><Logo /><nav className="hidden items-center gap-1 md:flex">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`top-nav ${pathname === href ? 'top-nav-active' : ''}`}><Icon />{label}</Link>)}</nav><div className="flex items-center gap-2"><button className="icon-button" aria-label="Notifications"><Bell /></button><span className="avatar">OM</span></div></div></header><main className="mx-auto max-w-7xl p-4 pb-24 md:p-7">{children}</main><nav className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-background p-2 md:hidden">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`mobile-tab ${pathname === href ? 'text-primary' : ''}`}><Icon />{label}</Link>)}</nav></div>
+  useEffect(() => {
+    const sync = (event?: Event) => {
+      setNotifications(getResidentNotifications())
+      const detail = (event as CustomEvent<ResidentNotification>)?.detail
+      if (detail) {
+        setToast(detail)
+        window.setTimeout(() => setToast((current) => current?.id === detail.id ? null : current), 4500)
+      }
+    }
+    sync()
+    window.addEventListener(RESIDENT_NOTIFICATIONS_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => { window.removeEventListener(RESIDENT_NOTIFICATIONS_EVENT, sync); window.removeEventListener('storage', sync) }
+  }, [])
+  const unreadCount = notifications.filter((notification) => !notification.read).length
+  return <div className="min-h-screen bg-muted/40"><header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur"><div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 md:px-7"><Logo /><nav className="hidden items-center gap-1 md:flex">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`top-nav ${pathname === href ? 'top-nav-active' : ''}`}><Icon />{label}</Link>)}</nav><div className="relative flex items-center gap-2"><button className="icon-button relative" aria-label="Notifications" aria-expanded={notificationOpen} onClick={() => setNotificationOpen((open) => !open)}><Bell />{unreadCount > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>{notificationOpen && <div className="absolute right-10 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-background shadow-xl"><div className="flex items-center justify-between border-b px-4 py-3"><p className="font-semibold">Thông báo</p><button className="text-xs font-medium text-primary" onClick={() => markAllResidentNotificationsRead()}>Đọc tất cả</button></div><div className="max-h-80 overflow-y-auto">{notifications.length ? notifications.map((notification) => <button key={notification.id} className={`flex w-full gap-3 border-b px-4 py-3 text-left transition hover:bg-muted/50 ${notification.read ? '' : 'bg-primary/5'}`} onClick={() => markResidentNotificationRead(notification.id)}><span className={`mt-1 size-2 shrink-0 rounded-full ${notification.read ? 'bg-muted-foreground/30' : 'bg-primary'}`} /><span className="min-w-0"><span className="block text-sm font-semibold">{notification.title}</span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{notification.message}</span><span className="mt-1 block text-[11px] text-muted-foreground">{formatNotificationAge(notification.createdAt)}</span></span></button>) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">Chưa có thông báo</p>}</div></div>}<span className="avatar">OM</span></div></div></header>{toast && <div role="status" className="fixed right-4 top-20 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border bg-background p-4 shadow-xl animate-in slide-in-from-right-3"><div className="flex gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-success/10 text-success"><Check /></span><div className="min-w-0"><p className="font-semibold">{toast.title}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{toast.message}</p></div><button className="icon-button -mr-2 -mt-2 size-7" aria-label="Close notification" onClick={() => setToast(null)}><X /></button></div></div>}<main className="mx-auto max-w-7xl p-4 pb-24 md:p-7">{children}</main><nav className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-background p-2 md:hidden">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`mobile-tab ${pathname === href ? 'text-primary' : ''}`}><Icon />{label}</Link>)}</nav></div>
 }
 
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
