@@ -221,6 +221,14 @@
   .slot-status-popover { position: fixed; z-index: 1000; display: flex; flex-direction: column; gap: 2px; min-width: 128px; padding: 5px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.18); }
   .slot-status-popover button { border: 0; border-radius: 5px; background: transparent; color: #1f2937; cursor: pointer; font: 500 12px/1.2 system-ui, sans-serif; padding: 7px 9px; text-align: left; }
   .slot-status-popover button:hover, .slot-status-popover button:focus-visible { background: #f3f4f6; outline: none; }
+  .resident-confirm { position: fixed; z-index: 1000; display: flex; flex-direction: column; gap: 10px; min-width: 190px; padding: 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px rgba(15,23,42,.18); color: #1f2937; font: 500 12px/1.35 system-ui, sans-serif; }
+  .resident-confirm strong { font-size: 14px; }
+  .resident-confirm-actions { display: flex; gap: 6px; }
+  .resident-confirm button { flex: 1; border: 0; border-radius: 6px; cursor: pointer; font: 600 12px/1.2 system-ui, sans-serif; padding: 7px 8px; }
+  .resident-confirm .confirm { background: #2563eb; color: #fff; }
+  .resident-confirm .cancel { background: #f3f4f6; color: #374151; }
+  body.resident-mode .slot { cursor: not-allowed; }
+  body.resident-mode .slot.avail, body.resident-mode .slot.mine { cursor: pointer; }
 </style>
 <script>
 (() => {
@@ -231,8 +239,34 @@
     ['Reserved', 'resv'],
     ['Your Car', 'mine']
   ];
+  const residentMode = new URLSearchParams(window.location.search).get('mode') === 'resident';
+  if (residentMode) document.body.classList.add('resident-mode');
   let popover;
   let activeSlot;
+  let activeResidentMap;
+
+  function openResidentConfirm(slot, map) {
+    closePopover();
+    activeSlot = slot;
+    activeResidentMap = map;
+    popover = document.createElement('div');
+    popover.className = 'resident-confirm';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Confirm parking selection');
+    popover.innerHTML = `<strong>Choose ${slot.querySelector('span')?.textContent?.trim() || 'parking slot'}</strong><span>Reserve on ${document.getElementById('floor-title')?.textContent || 'active floor'} for 15 minutes?</span><div class="resident-confirm-actions"><button type="button" class="cancel">Cancel</button><button type="button" class="confirm">Confirm</button></div>`;
+    popover.querySelector('.cancel').addEventListener('click', closePopover);
+    popover.querySelector('.confirm').addEventListener('click', () => {
+      activeResidentMap.querySelectorAll('.slot.mine').forEach((mine) => mine.classList.remove('mine'));
+      statusClasses.forEach((className) => slot.classList.remove(className));
+      slot.classList.add('mine');
+      window.parent.postMessage({ type: 'resident-parking-confirmed', slotId: slot.querySelector('span')?.textContent?.trim(), floorId: document.querySelector('[data-floor].active')?.dataset.floor }, window.location.origin);
+      closePopover();
+    });
+    document.body.appendChild(popover);
+    const rect = slot.getBoundingClientRect();
+    popover.style.left = Math.min(Math.max(8, rect.left), window.innerWidth - popover.offsetWidth - 8) + 'px';
+    popover.style.top = Math.max(8, rect.bottom + 6) + 'px';
+  }
 
   function closePopover() {
     popover?.remove();
@@ -287,10 +321,19 @@
       const label = slot.querySelector('span')?.textContent?.trim() || 'parking slot';
       slot.setAttribute('role', 'button');
       slot.setAttribute('tabindex', '0');
-      slot.setAttribute('aria-label', label + ', choose status');
-      slot.addEventListener('click', (event) => { event.stopPropagation(); openPopover(slot); });
+      slot.setAttribute('aria-label', label + (residentMode ? ', choose available parking slot' : ', choose status'));
+      const activate = (event) => {
+        event.stopPropagation();
+        if (residentMode) {
+          if (!slot.classList.contains('avail') && !slot.classList.contains('mine')) return;
+          openResidentConfirm(slot, map);
+        } else {
+          openPopover(slot);
+        }
+      };
+      slot.addEventListener('click', activate);
       slot.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPopover(slot); }
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); }
       });
     });
   }
