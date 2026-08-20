@@ -35,7 +35,7 @@ export function ResidentAssistantPage() {
   const latestRecommendation = [...messages].reverse().find((message): message is Extract<ChatMessage, { type: 'parking-recommendation' }> => message.type === 'parking-recommendation')
   function getAvailableCandidates() {
     const floor = getParkingFloorsSnapshot().find((item) => item.id === 'B1')
-    const available = new Set(floor?.zones.flatMap((zone) => zone.slots).filter((slot) => slot.status === 'available').map((slot) => slot.id))
+    const available = new Set(floor?.zones.flatMap((zone) => zone.slots).filter((slot) => slot.status === 'available' || slot.isMine).map((slot) => slot.id))
     return candidates.filter((id) => available.has(id)).slice(0, 3)
   }
 
@@ -62,7 +62,7 @@ export function ResidentAssistantPage() {
   }
 
   function chooseSlot(slot: ParkingSlot) {
-    if (!latestRecommendation?.recommendedSlotIds.includes(slot.id)) return
+    if (slot.status !== 'available' && !slot.isMine) return
     setSelection({ slotId: slot.id, floorId: latestRecommendation.floorId })
     setConfirmed(false)
   }
