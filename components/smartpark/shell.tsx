@@ -1,20 +1,20 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   Bell, CarFront, ChartNoAxesCombined, Check, ChevronDown, ClipboardCheck, LayoutDashboard,
   LogOut, Map, Menu, Moon, ParkingCircle, Search, Settings, Sparkles, Sun, TriangleAlert, Users, X,
 } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { nav } from '@/lib/smartpark-data'
 import { formatNotificationAge, getResidentNotifications, markAllResidentNotificationsRead, markResidentNotificationRead, RESIDENT_NOTIFICATIONS_EVENT, type ResidentNotification } from '@/lib/resident-notifications'
 
 const iconMap = { Bell, CarFront, ChartNoAxesCombined, ClipboardCheck, LayoutDashboard, Map, Settings, Sparkles, TriangleAlert, Users }
 
-export function Logo({ compact = false }: { compact?: boolean }) {
+export function Logo({ compact = false, href = '/' }: { compact?: boolean; href?: string }) {
   return (
-    <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight" aria-label="Trang chủ SmartPark AI">
+    <Link href={href} className="flex items-center gap-3 font-semibold tracking-tight" aria-label="Trang chủ SmartPark AI">
       <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><ParkingCircle className="size-5" /></span>
       {!compact && <span>SmartPark <span className="text-primary">AI</span></span>}
     </Link>
@@ -34,7 +34,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r bg-sidebar transition-transform lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-18 items-center justify-between border-b px-5"><Logo /><button className="icon-button lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X /></button></div>
+        <div className="flex h-18 items-center justify-between border-b px-5"><Logo href="/admin" /><button className="icon-button lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X /></button></div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Admin navigation">
           <p className="px-3 pb-2 pt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Không gian làm việc</p>
           {nav.map((item) => {
@@ -61,7 +61,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
 export function ResidentShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [notifications, setNotifications] = useState<ResidentNotification[]>([])
+  const router = useRouter()
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
   const [toast, setToast] = useState<ResidentNotification | null>(null)
   const links = [
     ['/resident', 'Trang chủ', LayoutDashboard], ['/resident/assistant', 'Trợ lý', Sparkles], ['/resident/vehicles', 'Xe của tôi', CarFront], ['/resident/guest-parking', 'Đỗ xe khách', Users],
@@ -80,8 +83,15 @@ export function ResidentShell({ children }: { children: ReactNode }) {
     window.addEventListener('storage', sync)
     return () => { window.removeEventListener(RESIDENT_NOTIFICATIONS_EVENT, sync); window.removeEventListener('storage', sync) }
   }, [])
+  useEffect(() => {
+    const closeAccount = (event: MouseEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountOpen(false)
+    }
+    document.addEventListener('click', closeAccount)
+    return () => document.removeEventListener('click', closeAccount)
+  }, [])
   const unreadCount = notifications.filter((notification) => !notification.read).length
-  return <div className="min-h-screen bg-muted/40"><header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur"><div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 md:px-7"><Logo /><nav className="hidden items-center gap-1 md:flex">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`top-nav ${pathname === href ? 'top-nav-active' : ''}`}><Icon />{label}</Link>)}</nav><div className="relative flex items-center gap-2"><button className="icon-button relative" aria-label="Notifications" aria-expanded={notificationOpen} onClick={() => setNotificationOpen((open) => !open)}><Bell />{unreadCount > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>{notificationOpen && <div className="absolute right-10 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-background shadow-xl"><div className="flex items-center justify-between border-b px-4 py-3"><p className="font-semibold">Thông báo</p><button className="text-xs font-medium text-primary" onClick={() => markAllResidentNotificationsRead()}>Đọc tất cả</button></div><div className="max-h-80 overflow-y-auto">{notifications.length ? notifications.map((notification) => <button key={notification.id} className={`flex w-full gap-3 border-b px-4 py-3 text-left transition hover:bg-muted/50 ${notification.read ? '' : 'bg-primary/5'}`} onClick={() => markResidentNotificationRead(notification.id)}><span className={`mt-1 size-2 shrink-0 rounded-full ${notification.read ? 'bg-muted-foreground/30' : 'bg-primary'}`} /><span className="min-w-0"><span className="block text-sm font-semibold">{notification.title}</span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{notification.message}</span><span className="mt-1 block text-[11px] text-muted-foreground">{formatNotificationAge(notification.createdAt)}</span></span></button>) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">Chưa có thông báo</p>}</div></div>}<span className="avatar">OM</span></div></div></header>{toast && <div role="status" className="fixed right-4 top-20 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border bg-background p-4 shadow-xl animate-in slide-in-from-right-3"><div className="flex gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-success/10 text-success"><Check /></span><div className="min-w-0"><p className="font-semibold">{toast.title}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{toast.message}</p></div><button className="icon-button -mr-2 -mt-2 size-7" aria-label="Close notification" onClick={() => setToast(null)}><X /></button></div></div>}<main className="mx-auto max-w-7xl p-4 pb-24 md:p-7">{children}</main><nav className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-background p-2 md:hidden">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`mobile-tab ${pathname === href ? 'text-primary' : ''}`}><Icon />{label}</Link>)}</nav></div>
+  return <div className="min-h-screen bg-muted/40"><header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur"><div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 md:px-7"><Logo href="/resident" /><nav className="hidden items-center gap-1 md:flex">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`top-nav ${pathname === href ? 'top-nav-active' : ''}`}><Icon />{label}</Link>)}</nav><div className="relative flex items-center gap-2"><button className="icon-button relative" aria-label="Notifications" aria-expanded={notificationOpen} onClick={(event) => { event.stopPropagation(); setAccountOpen(false); setNotificationOpen((open) => !open) }}><Bell />{unreadCount > 0 && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 text-primary-foreground">{unreadCount > 9 ? '9+' : unreadCount}</span>}</button>{notificationOpen && <div className="absolute right-10 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border bg-background shadow-xl"><div className="flex items-center justify-between border-b px-4 py-3"><p className="font-semibold">Thông báo</p><button className="text-xs font-medium text-primary" onClick={() => markAllResidentNotificationsRead()}>Đọc tất cả</button></div><div className="max-h-80 overflow-y-auto">{notifications.length ? notifications.map((notification) => <button key={notification.id} className={`flex w-full gap-3 border-b px-4 py-3 text-left transition hover:bg-muted/50 ${notification.read ? '' : 'bg-primary/5'}`} onClick={() => markResidentNotificationRead(notification.id)}><span className={`mt-1 size-2 shrink-0 rounded-full ${notification.read ? 'bg-muted-foreground/30' : 'bg-primary'}`} /><span className="min-w-0"><span className="block text-sm font-semibold">{notification.title}</span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{notification.message}</span><span className="mt-1 block text-[11px] text-muted-foreground">{formatNotificationAge(notification.createdAt)}</span></span></button>) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">Chưa có thông báo</p>}</div></div>}<div ref={accountMenuRef} className="relative"><button type="button" className="avatar cursor-pointer" aria-label="Open account menu" aria-expanded={accountOpen} onClick={(event) => { event.stopPropagation(); setNotificationOpen(false); setAccountOpen((open) => !open) }}>OM</button>{accountOpen && <div className="absolute right-0 top-12 z-30 w-56 overflow-hidden rounded-2xl border bg-background shadow-xl"><div className="px-4 py-3"><p className="font-semibold">Olivia Martin</p><p className="text-xs text-muted-foreground">Cư dân</p></div><div className="border-t p-2"><button type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-destructive transition hover:bg-muted" onClick={() => router.replace('/login')}><LogOut />Đăng xuất</button></div></div>}</div></div></div></header>{toast && <div role="status" className="fixed right-4 top-20 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border bg-background p-4 shadow-xl animate-in slide-in-from-right-3"><div className="flex gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-success/10 text-success"><Check /></span><div className="min-w-0"><p className="font-semibold">{toast.title}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{toast.message}</p></div><button className="icon-button -mr-2 -mt-2 size-7" aria-label="Close notification" onClick={() => setToast(null)}><X /></button></div></div>}<main className="mx-auto max-w-7xl p-4 pb-24 md:p-7">{children}</main><nav className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t bg-background p-2 md:hidden">{links.map(([href, label, Icon]) => <Link key={href} href={href} className={`mobile-tab ${pathname === href ? 'text-primary' : ''}`}><Icon />{label}</Link>)}</nav></div>
 }
 
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
