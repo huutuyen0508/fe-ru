@@ -6,6 +6,7 @@ import { CalendarClock, CarFront, Check, ChevronDown, ChevronLeft, Clock3, Copy,
 import { FormEvent, useEffect, useState } from 'react'
 import { Modal, PageHeader, ResidentShell, Status } from './shell'
 import { ParkingMap } from './parking-map'
+import { clearResidentParkingSession, getResidentParkingSession, saveResidentParkingSession } from '@/lib/resident-parking-session'
 
 export function ResidentDashboard() {
   const [selectedSpot, setSelectedSpot] = useState('A-024')
@@ -13,6 +14,7 @@ export function ResidentDashboard() {
   const [reservationExpiresAt, setReservationExpiresAt] = useState<number | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState(0)
   const sessionKey = 'smartpark-resident-parking-session'
+  const primaryVehiclePlate = '8ABC123'
 
   function syncReservationToMap() {
     const iframe = document.querySelector<HTMLIFrameElement>('iframe[src*="parkingmap.html"]')
@@ -20,20 +22,11 @@ export function ResidentDashboard() {
   }
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(sessionKey)
-    if (!raw) return
-    try {
-      const session = JSON.parse(raw) as { slotId?: string; floorId?: string; expiresAt?: number }
-      if (!session.slotId || !session.floorId || !session.expiresAt || session.expiresAt <= Date.now()) {
-        window.localStorage.removeItem(sessionKey)
-        return
-      }
-      setSelectedSpot(session.slotId)
-      setSelectedFloor(session.floorId)
-      setReservationExpiresAt(session.expiresAt)
-    } catch {
-      window.localStorage.removeItem(sessionKey)
-    }
+    const session = getResidentParkingSession()
+    if (!session) return
+    setSelectedSpot(session.slotId)
+    setSelectedFloor(session.floorId)
+    setReservationExpiresAt(session.expiresAt)
   }, [])
 
   useEffect(() => {
@@ -44,7 +37,7 @@ export function ResidentDashboard() {
       setSelectedSpot(event.data.slotId)
       setSelectedFloor(event.data.floorId)
       setReservationExpiresAt(expiresAt)
-      window.localStorage.setItem(sessionKey, JSON.stringify({ slotId: event.data.slotId, floorId: event.data.floorId, expiresAt }))
+      saveResidentParkingSession({ slotId: event.data.slotId, floorId: event.data.floorId as 'B1' | 'B2', expiresAt, vehiclePlate: primaryVehiclePlate })
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -56,7 +49,7 @@ export function ResidentDashboard() {
       const remaining = Math.max(0, Math.ceil((reservationExpiresAt - Date.now()) / 1000))
       setRemainingSeconds(remaining)
       if (remaining === 0) {
-        window.localStorage.removeItem(sessionKey)
+        clearResidentParkingSession()
         setReservationExpiresAt(null)
       }
     }
@@ -80,6 +73,11 @@ export const registeredResidentVehicles = [{plate:'8ABC123',model:'Tesla Model 3
 
 export function MyVehiclesPage() {
   const [cars,setCars]=useState([...registeredResidentVehicles]); const [selected,setSelected]=useState(cars[0]); const [open,setOpen]=useState(false)
+  useEffect(() => {
+    const session = getResidentParkingSession()
+    if (!session) return
+    setCars(registeredResidentVehicles.map((car) => car.plate === session.vehiclePlate ? { ...car, status: 'Đang đỗ', space: `${session.slotId} · ${session.floorId} Floor` } : car))
+  }, [])
   return <ResidentShell><PageHeader title="Xe của tôi" description="Quản lý các phương tiện được kết nối với tài khoản đỗ xe cư dân của bạn." action={<Link href="/resident/vehicles/register" className="button-primary"><Plus />Đăng ký xe</Link>} /><section className="grid gap-4 lg:grid-cols-2">{cars.map(car=><article key={car.plate} className="panel overflow-hidden"><div className="flex items-start justify-between p-5"><div className="flex gap-4"><span className="stat-icon stat-primary"><CarFront /></span><div><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-lg font-bold">{car.plate}</p>{car.primary&&<Status tone="info">Chính</Status>}</div><p className="mt-1 text-sm font-medium">{car.model}</p><p className="text-xs text-muted-foreground">{car.color}</p></div></div><button className="icon-button" onClick={()=>{setSelected(car);setOpen(true)}}><MoreHorizontal/></button></div><div className="grid grid-cols-2 border-t bg-muted/30"><div className="p-4"><p className="text-xs text-muted-foreground">Status</p><Status tone={car.status==='Đang đỗ'?'success':'neutral'}>{car.status}</Status></div><div className="border-l p-4"><p className="text-xs text-muted-foreground">Assigned space</p><p className="mt-1 font-mono font-semibold">{car.space}</p></div></div></article>)}</section><Modal open={open} onClose={()=>setOpen(false)} title={selected.plate}><div className="flex flex-col gap-3"><button className="button-secondary justify-start"><Edit3/>Edit vehicle</button><button className="button-secondary justify-start" onClick={()=>setCars(cars.map(c=>({...c,primary:c.plate===selected.plate})))}><Check/>Set as primary</button><button className="button-secondary justify-start text-destructive" onClick={()=>{setCars(cars.filter(c=>c.plate!==selected.plate));setOpen(false)}}><Trash2/>Remove vehicle</button></div></Modal></ResidentShell>
 }
 
